@@ -48,17 +48,11 @@ while True:
                     mixing_index += 1
                 #print(mixing_index, event.tick, notes_mixed[mixing_index]["tick"], event.tick >= notes_mixed[mixing_index]["tick"])
                 notes_mixed.insert(mixing_index, {'instrument': instrument, 'tick': event.tick, 'pitch': event.get_pitch()})
-                '''#printdelay(ticks, resolution, bpm)
-                if ticks != 0:
-                    if freq != round(resolution*bpm/ticks) and round(resolution*bpm/ticks) != 0:
-                        freq = round(resolution*bpm/ticks)
-                        gdcevents.insert(gdcindex, GDCevent("!speed", freq))
-                        gdcindex += 1
-                else:
-                    gdcevents.append(GDCevent("!combine"))
-                
-                gdcevents.append(GDCevent(instrument, event.get_pitch() - default_pitch))
-                #print("note", event.get_pitch(), "velocity", event.get_velocity())'''
+        elif event.statusmsg == 0xFF and event.metacommand == 0x51:
+                while mixing_index < len(notes_mixed) and event.tick >= notes_mixed[mixing_index]["tick"]:
+                    mixing_index += 1
+                #print(mixing_index, event.tick, notes_mixed[mixing_index]["tick"], event.tick >= notes_mixed[mixing_index]["tick"])
+                notes_mixed.insert(mixing_index, {'instrument': 'tempo', 'tick': event.tick, 'bpm': event.get_bpm()})
         else:
             print(event)
         m += 1
@@ -87,7 +81,9 @@ gdcindex = 0
 for note in notes_mixed:
     if note['instrument'] == 'dummy':
         continue
-    
+    if note['instrument'] == 'tempo':
+        bpm = note['bpm']
+        continue
     
     delta = note['tick'] - last_tick
     #print(note['tick'], last_tick, delta)
