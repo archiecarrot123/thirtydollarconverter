@@ -284,6 +284,6 @@ GDC_INSTRUMENTS = (
     "noteblock_pling",
     "noteblock_xylophone",
     "noteblock_bit",
-    "minecraft_bell",
     "minecraft_explosion",
+    "minecraft_bell",
     )
