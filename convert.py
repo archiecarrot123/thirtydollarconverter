@@ -4,29 +4,34 @@ from tkinter import *
 from tkinter import ttk
 from tkinter import filedialog
 
-default_instrument = "noteblock_bass"
+default_instrument = "noteblock_harp"
 default_pitch = 60
 
 
 # globals
 resolution = 0
 notes_mixed = []
-instruments = []
-precussion = False
-instrument_widgets = []
+instruments = set()
+drums = set()
+instrument_widgets = {}
+drum_widgets = {}
 instrument_variables = {}
+drum_variables = {}
 instrument_mappings = {}
+drum_mappings = {}
 
 
 root = Tk()
-root.title("BEES")
+root.title("DON'T YOU LECTURE ME WITH YOUR THIRTY DOLLAR CONVERTER")
 
-mainframe = ttk.Frame(root, padding="3 3 12 12")
+mainframe = ttk.Frame(root, padding="12 3 12 3")
 mainframe.grid(column=0, row=0, sticky=(N, W, E, S))
 root.columnconfigure(0, weight=1)
 root.rowconfigure(0, weight=1)
-instframe = ttk.Frame(mainframe, padding="3 3 12 12")
-instframe.grid(column=0, row=2, sticky=(N, W, E, S))
+instframe = ttk.Frame(mainframe, padding="12 3 12 3")
+instframe.grid(column=0, row=1, sticky=(N, W, E, S))
+drumframe = ttk.Frame(mainframe, padding="12 3 12 3")
+drumframe.grid(column=1, row=0, rowspan=3, sticky=(N, W, E, S))
 
 
 class GDCevent:
@@ -58,10 +63,11 @@ def loadmidi(filename):
     return pattern
 
 def mix(pattern):
-    global precussion
+    global drums
     global instruments
     
-    instruments = [] # need to reset instruments
+    instruments = set() # need to reset instruments
+    drums = set()
     n = 0
     for track in pattern:
         print("Track", n)
@@ -73,19 +79,24 @@ def mix(pattern):
                 if event.get_velocity() != 0 and event.channel != 9:
                     while mixing_index < len(notes_mixed) and event.tick >= notes_mixed[mixing_index]["tick"]:
                         mixing_index += 1
-                    #print(mixing_index, event.tick, notes_mixed[mixing_index]["tick"], event.tick >= notes_mixed[mixing_index]["tick"])
                     notes_mixed.insert(mixing_index, {'instrument': current_instrument, 'tick': event.tick, 'pitch': event.get_pitch()})
-                elif event.channel == 9:
-                    precussion = True
+                elif event.get_velocity() != 0 and event.channel == 9:
+                    while mixing_index < len(notes_mixed) and event.tick >= notes_mixed[mixing_index]["tick"]:
+                        mixing_index += 1
+                    notes_mixed.insert(mixing_index, {'instrument': 'precussion', 'tick': event.tick, 'pitch': event.get_pitch()})
+                    drums.add(event.get_pitch())
+                
             elif event.statusmsg == 0xFF and event.metacommand == 0x51:
                 while mixing_index < len(notes_mixed) and event.tick >= notes_mixed[mixing_index]["tick"]:
                     mixing_index += 1
                 #print(mixing_index, event.tick, notes_mixed[mixing_index]["tick"], event.tick >= notes_mixed[mixing_index]["tick"])
                 notes_mixed.insert(mixing_index, {'instrument': 'tempo', 'tick': event.tick, 'bpm': event.get_bpm()})
+                
             elif event.statusmsg == 0xC0:
                 current_instrument = event.get_value()
                 if current_instrument not in instruments:
-                    instruments.append(current_instrument)
+                    instruments.add(current_instrument)
+                
             else:
                 print(event)
         
@@ -118,10 +129,14 @@ def gdcize(notes):
         else:
             gdcevents.append(GDCevent("!combine"))
         
-        gdcindex = len(gdcevents)
-        gdcevents.append(GDCevent(instrument_mappings[note['instrument']], note['pitch'] - default_pitch))
+        if note['instrument'] == 'precussion':
+            gdcindex = len(gdcevents)
+            gdcevents.append(GDCevent(drum_mappings[note['pitch']]))
+        else:
+            gdcindex = len(gdcevents)
+            gdcevents.append(GDCevent(instrument_mappings[note['instrument']], note['pitch'] - default_pitch))
+    
     return gdcevents
-        #print("note", event.get_pitch(), "velocity", event.get_velocity())
 
 def writeevents(gdcevents, filename):
     f = open(filename, 'w')
@@ -135,50 +150,67 @@ def load():
     notes_mixed = mix(pattern)
     #print(notes_mixed)
     
-    # this should probably be another function but i can't be bothered to make another one
     global instruments
     global instrument_widgets
     global instrument_variables
-    global instrument_mappings
     global instframe
     
-    # need to clear instrument_widgets each time to avoid issues
-    for widgets in instrument_widgets:
-        widgets['label'].destroy()
-        widgets['combobox'].destroy()
-    instrument_widgets = []
+    selector(instruments, instrument_widgets, instrument_variables, instframe, instrument_names.INSTRUMENT_NAMES, instrument_names.GDC_INSTRUMENTS)
     
-    n = 0
-    for instrument in instruments:
-        instrument_variables[instrument] = StringVar(value="noteblock_bass")
-        instrument_widgets.append({
-            'label': ttk.Label(instframe, text=instrument_names.INSTRUMENT_NAMES[instrument+1]),
-            'combobox': ttk.Combobox(instframe, textvariable=instrument_variables[instrument])
-            })
-        instrument_widgets[n]['label'].grid(column=0, row=n, sticky=(N, W, E, S))
-        instrument_widgets[n]['combobox'].grid(column=1, row=n, sticky=(N, W, E, S))
-        instrument_widgets[n]['combobox']["values"] = instrument_names.GDC_INSTRUMENTS
-        n += 1
+    global drums
+    global drum_widgets
+    global drum_variables
+    global drumframe
+    
+    selector(drums, drum_widgets, drum_variables, drumframe, instrument_names.PRECUSSION_NAMES, instrument_names.GDC_INSTRUMENTS, instrument_names.PRECUSSION_DEFAULTS)
 
-def update_instruments():
+def update_mappings():
     global instrument_variables
     global instrument_mappings
     
     for instrument in instrument_variables:
         instrument_mappings[instrument] = instrument_variables[instrument].get()
     print(instrument_mappings)
+    
+    global drum_variables
+    global drum_mappings
+    for drum in drum_variables:
+        drum_mappings[drum] = drum_variables[drum].get()
+    print(drum_mappings)
+
+def selector(values, widgets, variables, parent, names, options, defaults=None):
+    # need to clear widgets each time to avoid issues
+    for i in widgets:
+        widgets[i]['label'].destroy()
+        widgets[i]['combobox'].destroy()
+    widgets = {}
+    
+    n = 0
+    for value in values:
+        if not defaults or not defaults[value]:
+            variables[value] = StringVar(value=default_instrument)
+        else:
+            variables[value] = StringVar(value=defaults[value])
+        widgets[value] = {
+            'label': ttk.Label(parent, text=names[value]),
+            'combobox': ttk.Combobox(parent, textvariable=variables[value])
+            }
+        widgets[value]['label'].grid(column=0, row=n, sticky=(N, W, E, S))
+        widgets[value]['combobox'].grid(column=1, row=n, sticky=(N, W, E, S))
+        widgets[value]['combobox']["values"] = options
+        n += 1
 
 def run():
     global notes_mixed
     
-    update_instruments()
+    update_mappings()
     gdcevents = gdcize(notes_mixed)
     writeevents(gdcevents, filedialog.asksaveasfilename())
 
 
 openbutton = ttk.Button(mainframe, text="Open", command=load)
-openbutton.grid(column=0, row=0, sticky=(N, W, E, S))
+openbutton.grid(column=0, columnspan=1, row=0, sticky=(W, E))
 runbutton = ttk.Button(mainframe, text="Run", command=run)
-runbutton.grid(column=0, row=1, sticky=(N, W, E, S))
+runbutton.grid(column=0, columnspan=1, row=2, sticky=(W, E))
 
 root.mainloop()
